@@ -127,6 +127,14 @@ void led_task(void *p) {
 
             gfx_clear_buffer(&disp);
             gfx_draw_string(&disp, 0, 0, 2, string_double);
+            if(d<112){
+                gfx_draw_line(&disp, 15, 27, (int)d, 27);
+            }
+            else{
+                gfx_draw_line(&disp, 15, 27, 112, 27);
+            }
+            vTaskDelay(pdMS_TO_TICKS(50));
+            
             gfx_show(&disp);
             vTaskDelay(pdMS_TO_TICKS(150));
             
