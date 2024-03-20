@@ -25,6 +25,8 @@ int TRIG_PIN = 16;
 
 SemaphoreHandle_t xSemaphore_trig;
 
+QueueHandle_t xQueueButId;
+
 void oled1_btn_led_init(void) {
     gpio_init(LED_1_OLED);
     gpio_set_dir(LED_1_OLED, GPIO_OUT);
@@ -99,7 +101,7 @@ void oled1_demo_1(void *p) {
     }
 }
 
-void oled1_demo_2(void *p) {
+void led_task(void *p) {
     printf("Inicializando Driver\n");
     ssd1306_init();
 
@@ -110,27 +112,39 @@ void oled1_demo_2(void *p) {
     printf("Inicializando btn and LEDs\n");
     oled1_btn_led_init();
 
+    char string_double[20];
+
     while (1) {
+        
+        double d;
+        if (xSemaphoreTake(xSemaphore_trig, pdMS_TO_TICKS(500)) == pdTRUE) {
+            if (xQueueReceive(xQueueButId, &d,  pdMS_TO_TICKS(100))) {
+                printf("Entro na fila \n");
+                // Transforma double em str
+                sprintf(string_double, "%.2f cm", d);
+                printf("String double é %s \n", string_double);
+            }
 
-        gfx_clear_buffer(&disp);
-        gfx_draw_string(&disp, 0, 0, 1, "Mandioca");
-        gfx_show(&disp);
-        vTaskDelay(pdMS_TO_TICKS(150));
+            gfx_clear_buffer(&disp);
+            gfx_draw_string(&disp, 0, 0, 2, string_double);
+            gfx_show(&disp);
+            vTaskDelay(pdMS_TO_TICKS(150));
+            
+        } else{
+            gfx_clear_buffer(&disp);
+            gfx_draw_string(&disp, 0, 0, 2, "Falha");
+            gfx_show(&disp);
+            vTaskDelay(pdMS_TO_TICKS(150));
+        }
 
-        gfx_clear_buffer(&disp);
-        gfx_draw_string(&disp, 0, 0, 2, "Batata");
-        gfx_show(&disp);
-        vTaskDelay(pdMS_TO_TICKS(150));
-
-        gfx_clear_buffer(&disp);
-        gfx_draw_string(&disp, 0, 0, 4, "Inhame");
-        gfx_show(&disp);
-        vTaskDelay(pdMS_TO_TICKS(150));
     }
+
+    
 }
 
 
 void trigger_task(void *p) {
+    printf("trigger task \n");
     gpio_init(TRIG_PIN);
     gpio_set_dir(TRIG_PIN, GPIO_OUT);
     gpio_put(TRIG_PIN, 0);
@@ -138,16 +152,17 @@ void trigger_task(void *p) {
     int delay = 250;
 
     while (true) {
-        if (xSemaphoreTake(xSemaphore_trig, pdMS_TO_TICKS(500)) == pdTRUE) {
-            gpio_put(TRIG_PIN, 1);
-            vTaskDelay(pdMS_TO_TICKS(delay));
-            gpio_put(TRIG_PIN, 0);
-            vTaskDelay(pdMS_TO_TICKS(delay));
-        }   
+        
+        gpio_put(TRIG_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(delay));
+        gpio_put(TRIG_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(delay));
+        
     }
 }
 
 void echo_task(void *p) {
+    printf("echo task \n");
     uint32_t start_us = 0;
     gpio_init(ECHO_PIN);
     gpio_set_dir(ECHO_PIN, GPIO_IN);
@@ -166,7 +181,8 @@ void echo_task(void *p) {
             }
             uint32_t delta_t = to_us_since_boot(get_absolute_time()) - start_us;
             double distancia =  (340* delta_t/10000)/2.0;
-            printf("Distancia %lf cm \n", distancia);
+            printf("%lf cm \n", distancia);
+            xQueueSend(xQueueButId, &distancia, 0);
             xSemaphoreGive(xSemaphore_trig);
         }
     }
@@ -175,12 +191,15 @@ void echo_task(void *p) {
 
 int main() {
     stdio_init_all();
-    
+
+    xQueueButId = xQueueCreate(32, sizeof(double));
     xSemaphore_trig = xSemaphoreCreateBinary();
 
     xTaskCreate(trigger_task, "Trigger_task", 256, NULL, 1, NULL);
     xTaskCreate(echo_task, "Echo_task", 256, NULL, 1, NULL);
     xSemaphoreGive(xSemaphore_trig);
+
+    xTaskCreate(led_task, "Led_task", 4095, NULL, 1, NULL);
 
     vTaskStartScheduler();
 
