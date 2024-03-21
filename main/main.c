@@ -25,7 +25,8 @@ int TRIG_PIN = 16;
 
 SemaphoreHandle_t xSemaphore_trig;
 
-QueueHandle_t xQueueButId;
+QueueHandle_t xQueueDistance;
+QueueHandle_t xQueueTime;
 
 void oled1_btn_led_init(void) {
     gpio_init(LED_1_OLED);
@@ -67,11 +68,9 @@ void led_task(void *p) {
         
         double d;
         if (xSemaphoreTake(xSemaphore_trig, pdMS_TO_TICKS(500)) == pdTRUE) {
-            if (xQueueReceive(xQueueButId, &d,  pdMS_TO_TICKS(100))) {
-                printf("Entro na fila \n");
+            if (xQueueReceive(xQueueDistance, &d,  pdMS_TO_TICKS(100))) {
                 // Transforma double em str
                 sprintf(string_double, "%.2f cm", d);
-                printf("String double é %s \n", string_double);
             }
 
             gfx_clear_buffer(&disp);
@@ -101,7 +100,6 @@ void led_task(void *p) {
 
 
 void trigger_task(void *p) {
-    printf("trigger task \n");
     gpio_init(TRIG_PIN);
     gpio_set_dir(TRIG_PIN, GPIO_OUT);
     gpio_put(TRIG_PIN, 0);
@@ -118,38 +116,45 @@ void trigger_task(void *p) {
     }
 }
 
+void gpio_callback(uint gpio, uint32_t events){
+    if (events == GPIO_IRQ_EDGE_RISE) {
+        uint32_t start_us=to_us_since_boot(get_absolute_time());
+        xQueueSendFromISR(xQueueTime, &start_us, 0);
+    } if(events==GPIO_IRQ_EDGE_FALL){
+        uint32_t delta_t;
+        uint32_t start_us;
+        if (xQueueReceive(xQueueTime, &start_us,  pdMS_TO_TICKS(100))) {
+            delta_t = to_us_since_boot(get_absolute_time()) - start_us;
+            xQueueSendFromISR(xQueueTime, &delta_t, 0);
+
+        }
+    }
+}
+
 void echo_task(void *p) {
-    printf("echo task \n");
     uint32_t start_us = 0;
     gpio_init(ECHO_PIN);
     gpio_set_dir(ECHO_PIN, GPIO_IN);
     gpio_pull_up(ECHO_PIN);
+    gpio_set_irq_enabled_with_callback(ECHO_PIN, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true,
+                                       &gpio_callback);
 
     while (true) {
-        if (!gpio_get(ECHO_PIN)) { // se echo==0
-            while (!gpio_get(ECHO_PIN)) { // espera echo ser 1
-                vTaskDelay(pdMS_TO_TICKS(1));
-            }
-            start_us = to_us_since_boot(get_absolute_time());
-        }   
-        if (gpio_get(ECHO_PIN)) { // se echo==1
-            while (gpio_get(ECHO_PIN)) { // espera echo ser 0
-                vTaskDelay(pdMS_TO_TICKS(1));
-            }
-            uint32_t delta_t = to_us_since_boot(get_absolute_time()) - start_us;
+        uint32_t delta_t;
+        if (xQueueReceive(xQueueTime, &delta_t,  pdMS_TO_TICKS(100))){
             double distancia =  (340* delta_t/10000)/2.0;
             printf("%lf cm \n", distancia);
-            xQueueSend(xQueueButId, &distancia, 0);
+            xQueueSend(xQueueDistance, &distancia, 0);
             xSemaphoreGive(xSemaphore_trig);
         }
     }
- 
 }
 
 int main() {
     stdio_init_all();
 
-    xQueueButId = xQueueCreate(32, sizeof(double));
+    xQueueDistance = xQueueCreate(32, sizeof(double));
+    xQueueTime = xQueueCreate(32, sizeof(double));
     xSemaphore_trig = xSemaphoreCreateBinary();
 
     xTaskCreate(trigger_task, "Trigger_task", 256, NULL, 1, NULL);
