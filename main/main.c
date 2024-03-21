@@ -132,7 +132,6 @@ void gpio_callback(uint gpio, uint32_t events){
 }
 
 void echo_task(void *p) {
-    uint32_t start_us = 0;
     gpio_init(ECHO_PIN);
     gpio_set_dir(ECHO_PIN, GPIO_IN);
     gpio_pull_up(ECHO_PIN);
