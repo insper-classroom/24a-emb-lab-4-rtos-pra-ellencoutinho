@@ -121,14 +121,11 @@ void gpio_callback(uint gpio, uint32_t events){
         uint32_t start_us=to_us_since_boot(get_absolute_time());
         xQueueSendFromISR(xQueueTime, &start_us, 0);
     } if(events==GPIO_IRQ_EDGE_FALL){
-        uint32_t delta_t;
-        uint32_t start_us;
-        if (xQueueReceive(xQueueTime, &start_us,  pdMS_TO_TICKS(100))) {
-            delta_t = to_us_since_boot(get_absolute_time()) - start_us;
-            xQueueSendFromISR(xQueueTime, &delta_t, 0);
-
-        }
+        uint32_t end_us=to_us_since_boot(get_absolute_time());
+        xQueueSendFromISR(xQueueTime, &end_us, 0);
     }
+        
+
 }
 
 void echo_task(void *p) {
@@ -139,14 +136,20 @@ void echo_task(void *p) {
                                        &gpio_callback);
 
     while (true) {
+        uint32_t start_us;
+        uint32_t end_us;
         uint32_t delta_t;
-        if (xQueueReceive(xQueueTime, &delta_t,  pdMS_TO_TICKS(100))){
-            double distancia =  (340* delta_t/10000)/2.0;
-            printf("%lf cm \n", distancia);
-            xQueueSend(xQueueDistance, &distancia, 0);
-            xSemaphoreGive(xSemaphore_trig);
+        if (xQueueReceive(xQueueTime, &start_us,  pdMS_TO_TICKS(100))){
+            if (xQueueReceive(xQueueTime, &end_us,  pdMS_TO_TICKS(100))) {
+                delta_t = end_us - start_us;
+                double distancia =  (340* delta_t/10000)/2.0;
+                printf("%lf cm \n", distancia);
+                xQueueSend(xQueueDistance, &distancia, 0);
+                xSemaphoreGive(xSemaphore_trig);
+            }
         }
     }
+    
 }
 
 int main() {
