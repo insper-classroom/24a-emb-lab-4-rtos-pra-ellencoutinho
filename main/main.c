@@ -117,7 +117,7 @@ void trigger_task(void *p) {
 }
 
 void gpio_callback(uint gpio, uint32_t events){
-    uint32_t time;
+    double time;
     if (events == GPIO_IRQ_EDGE_RISE) {
         time=to_us_since_boot(get_absolute_time());
         
@@ -137,11 +137,11 @@ void echo_task(void *p) {
                                        &gpio_callback);
 
     while (true) {
-        uint32_t start_us;
-        uint32_t end_us;
+        double start_us;
+        double end_us;
         if (xQueueReceive(xQueueTime, &start_us,  pdMS_TO_TICKS(100))){
             if (xQueueReceive(xQueueTime, &end_us,  pdMS_TO_TICKS(100))) {
-                double distancia =  (340* (end_us - start_us)/10000)/2.0;
+                double distancia =  (343* (end_us - start_us)/10000)/2;
                 printf("%lf cm \n", distancia);
                 xQueueSend(xQueueDistance, &distancia, 0);
                 xSemaphoreGive(xSemaphore_trig);
